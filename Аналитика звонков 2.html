@@ -1,0 +1,1496 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📞 Аналитика звонков — фильтр длительности</title>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <style>
+        * { box-sizing: border-box; font-family: 'Inter', system-ui, sans-serif; }
+        body { margin: 0; min-height: 100vh; background: #f5f7fb; padding: 20px; }
+        .app { max-width: 1600px; margin: 0 auto; }
+        .card { background: white; border-radius: 20px; padding: 20px 24px; box-shadow: 0 8px 20px rgba(0,0,0,0.02); border: 1px solid #eef2f6; margin-bottom: 24px; }
+        .filters { display: flex; flex-wrap: wrap; gap: 20px 30px; margin-bottom: 16px; }
+        .filter-group { display: flex; flex-direction: column; gap: 6px; min-width: 200px; }
+        label { font-weight: 600; font-size: 13px; color: #475569; text-transform: uppercase; letter-spacing: 0.3px; }
+        .hint-text { font-size: 10px; color: #94a3b8; text-transform: none; font-weight: normal; margin-left: 4px; }
+        select[multiple] { padding: 8px; border-radius: 12px; border: 1px solid #d1d9e6; background: white; font-size: 14px; min-height: 90px; }
+        select[multiple]:focus { outline: 2px solid #3b82f6; border-color: transparent; }
+        select, input { padding: 10px 14px; border-radius: 30px; border: 1px solid #d1d9e6; background: white; }
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 16px; margin-bottom: 20px; }
+        .kpi-item { background: #f8fafc; border-radius: 18px; padding: 16px; border-left: 5px solid; }
+        .kpi-label { font-size: 14px; color: #64748b; margin-bottom: 8px; }
+        .kpi-value { font-size: 32px; font-weight: 700; color: #0f172a; cursor: pointer; }
+        .charts-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+        .chart-box { background: white; border-radius: 18px; padding: 16px; border: 1px solid #eef2f6; display: flex; flex-direction: column; }
+        .table-container { max-height: 400px; overflow: auto; border-radius: 16px; border: 1px solid #e2e8f0; background: white; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { background: #f1f5f9; padding: 12px 8px; font-weight: 600; position: sticky; top: 0; z-index: 10;}
+        td { padding: 10px 8px; border-bottom: 1px solid #edf2f7; }
+        .status-badge { padding: 4px 10px; border-radius: 30px; font-weight: 500; display: inline-block; }
+        .status-принято { background: #dcfce7; color: #166534; }
+        .status-пропущено { background: #fee2e2; color: #991b1b; }
+        .status-занято { background: #fff3cd; color: #856404; }
+        .btn { background: #3b82f6; color: white; border: none; padding: 10px 24px; border-radius: 40px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        .btn:hover { background: #2563eb; }
+        .btn-outline { background: white; border: 1px solid #cbd5e1; color: #1e293b; padding: 10px 24px; border-radius: 40px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        .btn-outline:hover { background: #f8fafc; }
+        .btn-sm { padding: 6px 14px; font-size: 13px; }
+        .export-bar { display: flex; gap: 12px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+        .toast { position: fixed; bottom: 24px; right: 24px; background: #1e293b; color: white; padding: 10px 20px; border-radius: 40px; opacity:0; transition:0.2s; pointer-events: none; z-index: 999; }
+        .employee-header { display: flex; align-items: center; gap: 12px; cursor: pointer; user-select: none; margin-bottom: 12px; }
+        .employee-header h3 { margin: 0; }
+        .toggle-icon { font-size: 20px; transition: transform 0.2s; }
+        .employee-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+        .employee-tag { background: #eef2ff; border-radius: 20px; padding: 6px 14px; display: inline-flex; align-items: center; gap: 8px; }
+        .employee-tag button { background: none; border: none; cursor: pointer; font-weight: bold; color: #64748b; font-size: 16px; }
+        .employee-tag button:hover { color: #ef4444; }
+        .preset-bar { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+        .inline-select { min-width: 180px; }
+        .hidden { display: none; }
+        .suggest-wrapper { position: relative; flex:1; }
+        .suggest-list { position: absolute; background: white; border: 1px solid #d1d9e6; border-radius: 16px; max-height: 200px; overflow-y: auto; width: 100%; z-index: 50; list-style: none; padding: 4px 0; margin-top: 4px; box-shadow: 0 6px 12px rgba(0,0,0,0.05); }
+        .suggest-list li { padding: 8px 16px; cursor: pointer; }
+        .suggest-list li:hover { background: #eef2ff; }
+        #statusLegend { margin-top: auto; padding-top: 16px; text-align: center; font-size: 14px; display: flex; flex-direction: column; gap: 6px; }
+        .perc-badge { display: inline-block; padding: 2px 6px; border-radius: 6px; font-weight: bold; font-size: 12px; background: rgba(0,0,0,0.05); }
+        .ai-box { background: linear-gradient(135deg, #f0fdfa, #e0f2fe); border: 1px solid #bae6fd; border-radius: 18px; padding: 20px; margin-bottom: 24px; }
+        .ai-box h3 { margin-top: 0; color: #0369a1; display: flex; align-items: center; gap: 8px; }
+        .ai-result { margin-top: 16px; font-size: 14px; line-height: 1.6; color: #334155; white-space: pre-wrap; background: white; padding: 16px; border-radius: 12px; display: none; }
+        .active-filter-tag { background: #e0f2fe; border: 1px solid #bae6fd; color: #0369a1; border-radius: 16px; padding: 4px 12px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+        .active-filter-tag button { background: none; border: none; cursor: pointer; color: #0ea5e9; font-weight: bold; font-size: 14px; padding: 0; display: flex; align-items: center; }
+        .active-filter-tag button:hover { color: #0284c7; }
+    </style>
+</head>
+<body>
+<div class="app">
+    <h1>📊 Аналитика звонков</h1>
+
+    <div class="card">
+        <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 16px;">
+            <input type="file" id="csvFileInput" accept=".csv" style="display:none;">
+            <button class="btn-outline" id="uploadCsvBtn">📁 Загрузить CSV (автораспределение)</button>
+            <button class="btn-outline" id="clearDataBtn">🗑️ Очистить данные текущего раздела</button>
+            <span id="recordCountLabel" style="margin-left: auto; color: #475569; font-weight: 500;"></span>
+        </div>
+        <p style="font-size:13px; color:#64748b; margin:0;">Записи распределяются по отделам согласно спискам фамилий. Неопознанные попадают в «Другие» (видны во «Все звонки»).</p>
+    </div>
+
+    <div class="card">
+        <h3 style="margin: 0 0 12px 0;">🌐 Загрузка из LPTracker API</h3>
+        <div style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+            <div class="filter-group" style="min-width: 280px; flex: 1;">
+                <label>Bearer-токен <span class="hint-text">(живёт ~7 дней)</span></label>
+                <input type="password" id="lptToken" placeholder="eyJ0eXAiOiJKV1Qi..." style="width: 100%;">
+            </div>
+            <div class="filter-group" style="min-width: 120px;">
+                <label>project_id</label>
+                <input type="text" id="lptProjectId" placeholder="40374" style="width: 100%;">
+            </div>
+            <div class="filter-group" style="min-width: 140px;">
+                <label>Дата с</label>
+                <input type="date" id="lptDateFrom" style="width: 100%;">
+            </div>
+            <div class="filter-group" style="min-width: 140px;">
+                <label>Дата по</label>
+                <input type="date" id="lptDateTo" style="width: 100%;">
+            </div>
+            <button class="btn" id="lptFetchBtn">⬇️ Загрузить</button>
+            <button class="btn-outline" id="lptCopyReportBtn" style="border-color:#10b981; color:#065f46;">📋 Отчёт за сегодня</button>
+        </div>
+        <div style="display: flex; gap: 16px; align-items: center; margin-top: 12px; flex-wrap: wrap;">
+            <span id="lptStatus" style="font-size: 13px; color: #475569;"></span>
+            <a href="#" id="lptHowToToken" style="font-size: 12px; color: #3b82f6; margin-left: auto;">Как получить токен?</a>
+        </div>
+        <div style="display: flex; gap: 16px; align-items: center; margin-top: 16px; padding-top: 16px; border-top: 1px solid #e2e8f0; flex-wrap: wrap;">
+            <label style="display: flex; gap: 8px; align-items: center; cursor: pointer;">
+                <input type="checkbox" id="lptAutocheckEnabled">
+                <span style="font-weight: 600; font-size: 13px;">🔔 Автопроверка каждые 5 мин (BUSY 0 сек)</span>
+            </label>
+            <label style="font-size: 13px; color: #475569; display: flex; gap: 6px; align-items: center;">Порог %:
+                <input type="number" id="lptAutocheckThreshold" min="1" max="100" step="1" style="width: 70px; padding: 6px 10px;">
+            </label>
+            <label style="font-size: 13px; color: #475569; display: flex; gap: 6px; align-items: center;">Мин. звонков:
+                <input type="number" id="lptAutocheckMinCalls" min="1" step="1" style="width: 70px; padding: 6px 10px;">
+            </label>
+            <button class="btn-outline btn-sm" id="lptCheckNowBtn">🔍 Проверить сейчас</button>
+            <span id="lptAutocheckStatus" style="font-size: 12px; color: #64748b; flex: 1 1 100%; min-width: 200px; margin-top: 4px;"></span>
+        </div>
+    </div>
+
+    <div class="card" id="employeePanelCard">
+        <div class="employee-header" id="toggleEmployeePanel">
+            <span class="toggle-icon" id="toggleIcon">▼</span>
+            <h3>👥 Управление сотрудниками (<span id="currentCategoryLabel">Юр.лица</span>)</h3>
+            <span style="margin-left: auto; font-size: 14px; color: #64748b;">нажмите, чтобы свернуть</span>
+        </div>
+        <div id="employeePanelContent">
+            <div class="employee-tags" id="employeeTagsContainer"></div>
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <div class="suggest-wrapper" style="min-width: 240px;">
+                    <input type="text" id="employeeSuggestInput" placeholder="Начните вводить фамилию или имя (весь список)" style="width:100%;" autocomplete="off">
+                    <ul class="suggest-list hidden" id="suggestList"></ul>
+                </div>
+                <button class="btn btn-sm" id="addSelectedBtn">➕ Добавить выбранное</button>
+                <button class="btn-outline btn-sm" id="addAllFromDataBtn">📋 Все из данных (по отделу)</button>
+                <button class="btn-outline btn-sm" id="addFromClipboardBtn">📎 Из буфера</button>
+            </div>
+            <div class="preset-bar">
+                <input type="text" id="presetName" placeholder="Имя пресета" style="width:160px;">
+                <button class="btn-outline btn-sm" id="savePresetBtn">💾 Сохранить пресет</button>
+                <select id="presetSelect" style="width:180px;"><option value="">— Загрузить пресет —</option></select>
+                <button class="btn-outline btn-sm" id="deletePresetBtn">🗑️ Удалить пресет</button>
+            </div>
+            <p style="font-size:12px; color:#64748b; margin-top:8px;">✎ — редактировать, ✕ — удалить. Автоподбор по всем именам из загруженных CSV.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="filters">
+            <div class="filter-group">
+                <label>🏢 Режим просмотра</label>
+                <select id="viewModeSelect" class="inline-select" style="margin-top:4px;">
+                    <option value="all" selected>Все звонки</option>
+                    <option value="legal">Юридические лица</option>
+                    <option value="individual">Физические лица</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>👥 Сотрудники <span class="hint-text">(Ctrl/Cmd)</span></label>
+                <select id="employeeFilter" multiple size="3"></select>
+            </div>
+            <div class="filter-group">
+                <label>📞 Тип <span class="hint-text">(Ctrl/Cmd)</span></label>
+                <select id="typeFilter" multiple size="3"></select>
+            </div>
+            <div class="filter-group">
+                <label>✅ Статус <span class="hint-text">(Ctrl/Cmd)</span></label>
+                <select id="statusFilter" multiple size="3"></select>
+            </div>
+            <div class="filter-group">
+                <label>📅 Дата <span class="hint-text">(Ctrl/Cmd)</span></label>
+                <select id="dateFilter" multiple size="3"></select>
+            </div>
+            <div class="filter-group">
+                <label>⏱️ Длительность <span class="hint-text">(Ctrl/Cmd)</span></label>
+                <select id="durationFilter" multiple size="3">
+                    <option value="zero">0 секунд</option>
+                    <option value="less30">Менее 30 секунд</option>
+                    <option value="ge30">30 секунд и более</option>
+                </select>
+            </div>
+            <div style="margin-left: auto; align-self: center;">
+                <button class="btn-outline" id="resetFiltersBtn">Сбросить фильтры</button>
+            </div>
+        </div>
+        
+        <div id="activeFiltersContainer" class="hidden" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e2e8f0; width: 100%; align-items: center; gap: 12px; flex-wrap: wrap;">
+            <span style="font-size: 13px; color: #64748b; font-weight: 600;">Активные фильтры:</span>
+            <div id="activeFiltersList" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
+        </div>
+    </div>
+
+    <div class="kpi-grid" id="kpiContainer"></div>
+
+    <div class="charts-row">
+        <div class="chart-box" style="justify-content: flex-start;">
+            <h3 style="margin-top:0;">Статусы звонков</h3>
+            <div style="position: relative; height: 200px; width: 100%; display: flex; justify-content: center;">
+                <canvas id="statusChart"></canvas>
+            </div>
+            <div id="statusLegend"></div>
+        </div>
+        <div class="chart-box">
+            <h3 style="margin-top:0;">Топ сотрудников</h3>
+            <canvas id="employeeChart"></canvas>
+        </div>
+        <div class="chart-box">
+            <h3 style="margin-top:0;">Активность по часам</h3>
+            <canvas id="hourlyChart"></canvas>
+        </div>
+    </div>
+
+    <div class="ai-box">
+        <h3>🤖 AI-Аналитик (Gemini)</h3>
+        <p style="font-size: 13px; color: #475569; margin-bottom: 16px;">Нейросеть проанализирует текущую выборку и даст рекомендации по улучшению дозваниваемости.</p>
+        <button class="btn" id="runAiBtn" style="background: #0ea5e9;">✨ Получить AI-рекомендации</button>
+        <div id="aiLoading" style="display: none; margin-top: 16px; font-size: 14px; color: #0369a1;">Анализируем данные... ⏳</div>
+        <div id="aiResult" class="ai-result"></div>
+    </div>
+
+    <div class="card">
+        <h3>📋 Статистика по сотрудникам (вкл. %)</h3>
+        <div class="table-container" style="max-height:300px;">
+            <table id="employeeStatsTable">
+                <thead>
+                    <tr>
+                        <th>Сотрудник</th>
+                        <th>Всего</th>
+                        <th>Принято</th>
+                        <th>Пропущено</th>
+                        <th>Занято</th>
+                        <th>Сумма (₽)</th>
+                        <th>Ср.длительность</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom:12px;">
+            <h3 style="margin:0;">📞 Журнал звонков</h3>
+            <input type="text" id="searchInput" placeholder="🔍 Поиск по журналу..." style="width:300px;">
+        </div>
+        <div class="table-container" style="max-height:350px;">
+            <table id="callsTable">
+                <thead id="callsHeader"></thead>
+                <tbody id="callsBody"></tbody>
+            </table>
+        </div>
+        <div class="export-bar">
+            <select id="exportEmployeeSelect" multiple size="2" style="min-width:200px;" title="Выберите конкретных сотрудников (Ctrl/Cmd)"></select>
+            <button class="btn-outline" id="exportXlsxManagerBtn" style="border-color:#10b981; color:#065f46;">📊 XLSX: Сводка по менеджерам (%)</button>
+            <button class="btn-outline" id="exportReachabilityBtn" style="border-color:#8b5cf6; color:#5b21b6;">📊 XLSX: Отчет по дозваниваемости (Физ + Юр)</button>
+            <button class="btn-outline" id="exportCsvManagerBtn" style="border-color:#3b82f6; color:#1e40af;">📄 CSV: Сводка по менеджерам (%)</button>
+            <button class="btn-outline" id="exportFullCsvBtn" style="margin-left:auto;">📑 Экспорт полного журнала</button>
+        </div>
+    </div>
+</div>
+<div id="toast" class="toast">Скопировано</div>
+
+<script>
+    (function(){
+        // ---------- СОСТОЯНИЕ ----------
+        let currentView = 'all';
+        let legalData = [], individualData = [], otherData = [];
+        let legalEmployees = new Set(['Иванов Иван Иванович', 'Яремус Лилия Александровна', 'Лоханина Елена Викторовна', 'Трифонова Яна Александровна', 'Семенов Семён Семёнович', 'Пименова Павлина Александровна', 'Попов Артем Сергеевич', 'Агеева Татьяна Николаевна']);
+        let individualEmployees = new Set(['Сачкова Татьяна Владимировна', 'Ильченко Елена Анатольевна', 'Троянова Светлана Викторовна', 'Савина Марина Игоревна', 'Толмазова Полина Александровна', 'Данилова Марина Игоревна']);
+        
+        const LEGAL_SURNAMES = new Set(['иванов', 'яремус', 'лоханина', 'трифонова', 'семенов', 'пименова', 'попов', 'агеева']);
+        const INDIVIDUAL_SURNAMES = new Set(['сачкова', 'ильченко', 'троянова', 'савина', 'толмазова', 'данилова']);
+        const headers = ['Время звонка','Тип звонка','Откуда','Куда','Статус','Цена','Длительность разговора в секундах'];
+        
+        // DOM
+        const viewModeSelect = document.getElementById('viewModeSelect');
+        const employeePanelCard = document.getElementById('employeePanelCard');
+        const togglePanel = document.getElementById('toggleEmployeePanel');
+        const panelContent = document.getElementById('employeePanelContent');
+        const toggleIcon = document.getElementById('toggleIcon');
+        const csvFileInput = document.getElementById('csvFileInput');
+        const uploadCsvBtn = document.getElementById('uploadCsvBtn');
+        const clearDataBtn = document.getElementById('clearDataBtn');
+        
+        // Фильтры
+        const employeeFilter = document.getElementById('employeeFilter');
+        const typeFilter = document.getElementById('typeFilter');
+        const statusFilter = document.getElementById('statusFilter');
+        const dateFilter = document.getElementById('dateFilter');
+        const durationFilter = document.getElementById('durationFilter');
+        const resetFiltersBtn = document.getElementById('resetFiltersBtn');
+        const searchInput = document.getElementById('searchInput');
+        
+        const kpiContainer = document.getElementById('kpiContainer');
+        const employeeStatsBody = document.querySelector('#employeeStatsTable tbody');
+        const callsHeader = document.getElementById('callsHeader');
+        const callsBody = document.getElementById('callsBody');
+        const exportEmployeeSelect = document.getElementById('exportEmployeeSelect');
+        const recordCountLabel = document.getElementById('recordCountLabel');
+        const employeeTagsContainer = document.getElementById('employeeTagsContainer');
+        const employeeSuggestInput = document.getElementById('employeeSuggestInput');
+        const suggestList = document.getElementById('suggestList');
+        const addSelectedBtn = document.getElementById('addSelectedBtn');
+        const addAllFromDataBtn = document.getElementById('addAllFromDataBtn');
+        const addFromClipboardBtn = document.getElementById('addFromClipboardBtn');
+        const currentCategoryLabel = document.getElementById('currentCategoryLabel');
+        const presetName = document.getElementById('presetName');
+        const savePresetBtn = document.getElementById('savePresetBtn');
+        const presetSelect = document.getElementById('presetSelect');
+        const deletePresetBtn = document.getElementById('deletePresetBtn');
+        const statusLegend = document.getElementById('statusLegend');
+        
+        const runAiBtn = document.getElementById('runAiBtn');
+        const aiLoading = document.getElementById('aiLoading');
+        const aiResult = document.getElementById('aiResult');
+        const exportReachabilityBtn = document.getElementById('exportReachabilityBtn');
+        
+        const activeFiltersContainer = document.getElementById('activeFiltersContainer');
+        const activeFiltersList = document.getElementById('activeFiltersList');
+
+        const apiKey = ""; // API ключ прокидывается окружением Canvas
+        
+        let statusChart, employeeChart, hourlyChart;
+        
+        // Хранилище
+        const STORAGE = {
+            legalData: 'call_legal_data_v15', individualData: 'call_individual_data_v15', otherData: 'call_other_data_v15',
+            legalEmps: 'call_legal_employees_v15', individualEmps: 'call_individual_employees_v15',
+            presets: 'employee_presets_v15'
+        };
+        let employeePresets = {};
+        
+        function saveAll() {
+            localStorage.setItem(STORAGE.legalData, JSON.stringify(legalData));
+            localStorage.setItem(STORAGE.individualData, JSON.stringify(individualData));
+            localStorage.setItem(STORAGE.otherData, JSON.stringify(otherData));
+            localStorage.setItem(STORAGE.legalEmps, JSON.stringify([...legalEmployees]));
+            localStorage.setItem(STORAGE.individualEmps, JSON.stringify([...individualEmployees]));
+            localStorage.setItem(STORAGE.presets, JSON.stringify(employeePresets));
+        }
+        
+        function loadAll() {
+            legalData = JSON.parse(localStorage.getItem(STORAGE.legalData) || '[]');
+            individualData = JSON.parse(localStorage.getItem(STORAGE.individualData) || '[]');
+            otherData = JSON.parse(localStorage.getItem(STORAGE.otherData) || '[]');
+            const legEmps = localStorage.getItem(STORAGE.legalEmps);
+            if (legEmps) legalEmployees = new Set(JSON.parse(legEmps));
+            const indEmps = localStorage.getItem(STORAGE.individualEmps);
+            if (indEmps) individualEmployees = new Set(JSON.parse(indEmps));
+            employeePresets = JSON.parse(localStorage.getItem(STORAGE.presets) || '{}');
+        }
+        
+        function getCurrentData() {
+            if (currentView === 'all') return [...legalData, ...individualData, ...otherData];
+            if (currentView === 'legal') return legalData;
+            return individualData;
+        }
+        
+        function getCurrentEmployeeSet() {
+            if (currentView === 'legal') return legalEmployees;
+            if (currentView === 'individual') return individualEmployees;
+            return null;
+        }
+        
+        // Утилиты
+        function showToast(text) { const t = document.getElementById('toast'); t.textContent = text; t.style.opacity = '1'; setTimeout(() => t.style.opacity = '0', 2000); }
+        window.copyValue = (v) => navigator.clipboard?.writeText(v).then(()=>showToast('Значение скопировано'));
+        function formatDuration(s) { 
+            if(!s || isNaN(s) || s <= 0) return '0:00'; 
+            const total = parseInt(s); const m = Math.floor(total/60); const sec = total % 60; 
+            return `${m}:${sec.toString().padStart(2,'0')}`; 
+        }
+        
+        function extractRawEmployee(row) {
+            const t = row['Тип звонка']||''; const from = row['Откуда']||''; const to = row['Куда']||'';
+            if(t.includes('Исходящий')) { if(from && !from.match(/^\+?\d/) && !from.includes('Группа') && from!=='---') return from; }
+            else if(t.includes('Входящий')) { if(to && !to.match(/^\+?\d/) && !to.includes('Группа') && to!=='---') return to; }
+            if(from && !from.match(/^\+?\d/) && !from.includes('Группа') && from!=='---') return from;
+            return 'Не указан';
+        }
+        
+        function detectDepartment(rawName) {
+            if (!rawName) return null;
+            const lower = rawName.toLowerCase().trim();
+            for (let s of LEGAL_SURNAMES) if (lower.includes(s)) return 'legal';
+            for (let s of INDIVIDUAL_SURNAMES) if (lower.includes(s)) return 'individual';
+            return null;
+        }
+        
+        function enrichData(arr) {
+            return arr.map(r => {
+                const raw = extractRawEmployee(r);
+                r._employee = raw;
+                r._price = parseFloat(r['Цена']) || 0;
+                r._duration = parseInt(r['Длительность разговора в секундах']) || 0;
+                const time = r['Время звонка'];
+                if(time) { const parts = time.split(' ')[0].split('.'); if(parts.length===3) { r._date = `${parts[0]}.${parts[1]}`; r._hour = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T${time.split(' ')[1]||'00:00'}`).getHours(); } }
+                return r;
+            });
+        }
+        
+        function processRawData(parsed) {
+            const cleaned = parsed.filter(r => Object.values(r).some(v => v && String(v).trim()!==''));
+            const enriched = enrichData(cleaned);
+            const legal = [], individual = [], other = [];
+            enriched.forEach(rec => {
+                const dept = detectDepartment(rec._employee);
+                if (dept === 'legal') legal.push(rec);
+                else if (dept === 'individual') individual.push(rec);
+                else other.push(rec);
+            });
+            return { legal, individual, other };
+        }
+
+        // ---------- ЗАГРУЗКА ИЗ LPTRACKER API ----------
+        const LPT_STORAGE = { token: 'lpt_token', projectId: 'lpt_project_id' };
+        const LPT_DISPOSITION = { ANSWER: 'Принято', NOANSWER: 'Пропущено', BUSY: 'Занято', CANCEL: 'Отменено', FAILED: 'Ошибка' };
+
+        function lptMapCall(c) {
+            const incoming = c.direction === 'from';
+            const employee = (c.user_text && c.user_text !== '---') ? c.user_text : '';
+            const client = c.client_text || c.client_title || '';
+            return {
+                'Время звонка': `${c.date} ${c.time}`,
+                'Тип звонка': incoming ? 'Входящий' : 'Исходящий',
+                'Откуда': incoming ? client : employee,
+                'Куда': incoming ? employee : client,
+                'Статус': LPT_DISPOSITION[c.disposition] || c.disposition || '',
+                'Цена': c.callcost != null ? String(c.callcost) : '0',
+                'Длительность разговора в секундах': c.talking_time != null ? String(c.talking_time) : '0',
+                '_linkedid': c.linkedid || ''
+            };
+        }
+
+        function lptDateToApi(isoDate) {
+            const [y, m, d] = isoDate.split('-');
+            return `${d}/${m}/${y}`;
+        }
+
+        async function lptFetchPage(token, projectId, fromApi, toApi, page) {
+            const filter = `date[0]=${fromApi}&date[1]=${toApi}&date[2]=NaN&date_configuration=1`;
+            const url = `https://my.lptracker.ru/rest/phones/calls?filter=${encodeURIComponent(filter)}&page=${page}&amount=200&project_id=${projectId}`;
+            const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+            if (!res.ok) throw new Error(`HTTP ${res.status} (${res.statusText || 'ошибка'}). Проверьте токен и project_id.`);
+            const json = await res.json();
+            if (json.status !== 1) throw new Error('API вернул status=' + json.status);
+            return json.result;
+        }
+
+        async function lptLoadAll() {
+            const lptStatus = document.getElementById('lptStatus');
+            const btn = document.getElementById('lptFetchBtn');
+            const token = (document.getElementById('lptToken').value || '').trim();
+            const projectId = (document.getElementById('lptProjectId').value || '').trim();
+            const fromIso = document.getElementById('lptDateFrom').value;
+            const toIso = document.getElementById('lptDateTo').value;
+            if (!token) return showToast('Введите токен');
+            if (!projectId) return showToast('Укажите project_id');
+            if (!fromIso || !toIso) return showToast('Укажите даты');
+            localStorage.setItem(LPT_STORAGE.token, token);
+            localStorage.setItem(LPT_STORAGE.projectId, projectId);
+
+            btn.disabled = true;
+            const fromApi = lptDateToApi(fromIso);
+            const toApi = lptDateToApi(toIso);
+            try {
+                lptStatus.textContent = 'Запрашиваю первую страницу...';
+                const first = await lptFetchPage(token, projectId, fromApi, toApi, 1);
+                const totalPages = (first.pages && first.pages.count) || 1;
+                const totalRecords = (first.pages && first.pages.records_total) || first.data.length;
+                let all = first.data.slice();
+                for (let p = 2; p <= totalPages; p++) {
+                    lptStatus.textContent = `Загружаю страницу ${p} из ${totalPages} (всего записей: ${totalRecords})...`;
+                    const r = await lptFetchPage(token, projectId, fromApi, toApi, p);
+                    all = all.concat(r.data);
+                }
+                lptStatus.textContent = `Получено ${all.length} записей. Обрабатываю...`;
+
+                const seen = new Set();
+                [...legalData, ...individualData, ...otherData].forEach(r => { if (r._linkedid) seen.add(r._linkedid); });
+                const fresh = all.map(lptMapCall).filter(r => !r._linkedid || !seen.has(r._linkedid));
+                const skipped = all.length - fresh.length;
+
+                const { legal, individual, other } = processRawData(fresh);
+                legalData = [...legalData, ...legal];
+                individualData = [...individualData, ...individual];
+                otherData = [...otherData, ...other];
+                saveAll();
+                switchView();
+                lptStatus.textContent = `Готово. Добавлено: Юр. ${legal.length}, Физ. ${individual.length}, Прочие ${other.length}. Пропущено дубликатов: ${skipped}.`;
+                showToast(`Загружено ${fresh.length} новых звонков`);
+            } catch (e) {
+                lptStatus.textContent = '❌ ' + e.message;
+                showToast('Ошибка загрузки');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // ---------- АВТОПРОВЕРКА И УВЕДОМЛЕНИЯ ----------
+        const LPT_AUTOCHECK_INTERVAL_MS = 5 * 60 * 1000;
+        const LPT_ALERT_COOLDOWN_MS = 60 * 60 * 1000;
+        const LPT_AUTOCHECK_STORAGE = {
+            enabled: 'lpt_autocheck_enabled',
+            threshold: 'lpt_autocheck_threshold',
+            minCalls: 'lpt_autocheck_min_calls',
+            lastAlerts: 'lpt_autocheck_last_alerts'
+        };
+        let lptAutocheckTimer = null;
+        let lptLastAlerts = {};
+
+        function lptIsBusyZero(call) {
+            return call.disposition === 'BUSY' && (!call.talking_time || parseInt(call.talking_time) === 0);
+        }
+
+        function lptIsRealEmployee(name) {
+            if (!name) return false;
+            const t = String(name).trim();
+            if (!t || t === '---') return false;
+            if (/^\+?\d{5,}$/.test(t)) return false;
+            if (/^группа/i.test(t)) return false;
+            return true;
+        }
+
+        function lptAnalyzeBusyProblems(calls, threshold, minCalls) {
+            const byEmp = {};
+            calls.forEach(c => {
+                const name = c.user_text;
+                if (!lptIsRealEmployee(name)) return;
+                if (!byEmp[name]) byEmp[name] = { total: 0, busy0: 0 };
+                byEmp[name].total++;
+                if (lptIsBusyZero(c)) byEmp[name].busy0++;
+            });
+            const all = Object.entries(byEmp).map(([emp, s]) => ({
+                employee: emp, busy0: s.busy0, total: s.total, ratio: (s.busy0 / s.total) * 100
+            }));
+            console.log('[LPT autocheck] разбивка по сотрудникам за последний час:', all);
+            const alerts = all.filter(a => a.total >= minCalls && a.ratio > threshold)
+                .map(a => ({ ...a, ratio: a.ratio.toFixed(1) }));
+            return alerts;
+        }
+
+        function lptNotify(title, body) {
+            if (!('Notification' in window) || Notification.permission !== 'granted') return;
+            try { new Notification(title, { body, requireInteraction: true, tag: 'lpt-' + title }); } catch (e) {}
+        }
+
+        async function lptPoll() {
+            const token = localStorage.getItem(LPT_STORAGE.token);
+            const projectId = localStorage.getItem(LPT_STORAGE.projectId);
+            const statusEl = document.getElementById('lptAutocheckStatus');
+            if (!token || !projectId) { statusEl.textContent = '❌ Нет токена или project_id'; return; }
+            const threshold = parseFloat(localStorage.getItem(LPT_AUTOCHECK_STORAGE.threshold) || '10');
+            const minCalls = parseInt(localStorage.getItem(LPT_AUTOCHECK_STORAGE.minCalls) || '5');
+            const now = new Date();
+            const todayApi = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}`;
+            const timeStr = now.toLocaleTimeString('ru-RU');
+            try {
+                statusEl.textContent = `🔄 ${timeStr}: проверяю...`;
+                const result = await lptFetchPage(token, projectId, todayApi, todayApi, 1);
+                const cutoff = Math.floor(Date.now() / 1000) - 3600;
+                const lastHour = result.data.filter(c => parseInt(c.time_src) >= cutoff);
+                const alerts = lptAnalyzeBusyProblems(lastHour, threshold, minCalls);
+                const nowMs = Date.now();
+                let sent = 0;
+                alerts.forEach(a => {
+                    const last = lptLastAlerts[a.employee] || 0;
+                    if (nowMs - last < LPT_ALERT_COOLDOWN_MS) return;
+                    lptLastAlerts[a.employee] = nowMs;
+                    sent++;
+                    lptNotify(`⚠️ Проблема с дозвонами: ${a.employee}`,
+                        `${a.busy0} из ${a.total} звонков (${a.ratio}%) — занято 0 сек за последний час.`);
+                });
+                localStorage.setItem(LPT_AUTOCHECK_STORAGE.lastAlerts, JSON.stringify(lptLastAlerts));
+                const problemList = alerts.length
+                    ? ' → ' + alerts.map(a => `${a.employee} (${a.busy0}/${a.total}, ${a.ratio}%)`).join('; ')
+                    : '';
+                statusEl.textContent = `✓ ${timeStr}: за час ${lastHour.length} зв., проблемных: ${alerts.length}, уведомлений: ${sent}${problemList}`;
+                statusEl.style.color = alerts.length ? '#b91c1c' : '#64748b';
+            } catch (e) {
+                statusEl.textContent = `❌ ${timeStr}: ${e.message}`;
+                if (/40[13]/.test(e.message)) {
+                    lptStopAutoCheck();
+                    document.getElementById('lptAutocheckEnabled').checked = false;
+                    statusEl.textContent += ' — автопроверка выключена, обновите токен';
+                }
+            }
+        }
+
+        async function lptStartAutoCheck() {
+            if ('Notification' in window && Notification.permission === 'default') {
+                const perm = await Notification.requestPermission();
+                if (perm !== 'granted') showToast('Уведомления не разрешены — будет только статус в приложении');
+            }
+            lptStopAutoCheck();
+            lptPoll();
+            lptAutocheckTimer = setInterval(lptPoll, LPT_AUTOCHECK_INTERVAL_MS);
+            localStorage.setItem(LPT_AUTOCHECK_STORAGE.enabled, '1');
+        }
+
+        function lptStopAutoCheck() {
+            if (lptAutocheckTimer) { clearInterval(lptAutocheckTimer); lptAutocheckTimer = null; }
+            localStorage.setItem(LPT_AUTOCHECK_STORAGE.enabled, '0');
+        }
+
+        function lptBuildDailyReport() {
+            const all = [...legalData, ...individualData, ...otherData];
+            const now = new Date();
+            const dd = String(now.getDate()).padStart(2, '0');
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const yyyy = now.getFullYear();
+            const todayStr = `${dd}.${mm}.${yyyy}`;
+            const today = all.filter(r => (r['Время звонка'] || '').startsWith(todayStr));
+            const total = today.length;
+            const busy = today.filter(r => (r['Статус'] || '').toLowerCase().includes('занято')).length;
+            const busy0 = today.filter(r => {
+                const s = (r['Статус'] || '').toLowerCase();
+                const d = parseInt(r['Длительность разговора в секундах']);
+                return s.includes('занято') && (!d || d === 0);
+            }).length;
+            const pct = (n) => total ? ((n / total) * 100).toFixed(1) : '0.0';
+            return {
+                text: `Всего: ${total}, Занято: ${busy}, Занято ноль секунд: ${busy0}, процент занято - ${pct(busy)}%, занято ноль секунд - ${pct(busy0)}%`,
+                total
+            };
+        }
+
+        function lptCopyDailyReport() {
+            const r = lptBuildDailyReport();
+            if (r.total === 0) {
+                showToast('Нет данных за сегодня — нажмите «⬇️ Загрузить»');
+                return;
+            }
+            const fallback = () => prompt('Скопируйте отчёт (Ctrl+A → Ctrl+C):', r.text);
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(r.text).then(() => showToast('Отчёт скопирован: ' + r.text.slice(0, 40) + '...')).catch(fallback);
+            } else {
+                fallback();
+            }
+        }
+
+        function lptInit() {
+            const tokenInput = document.getElementById('lptToken');
+            const projectInput = document.getElementById('lptProjectId');
+            const dateFrom = document.getElementById('lptDateFrom');
+            const dateTo = document.getElementById('lptDateTo');
+            tokenInput.value = localStorage.getItem(LPT_STORAGE.token) || '';
+            projectInput.value = localStorage.getItem(LPT_STORAGE.projectId) || '40374';
+            const today = new Date().toISOString().slice(0, 10);
+            dateFrom.value = today;
+            dateTo.value = today;
+            document.getElementById('lptFetchBtn').addEventListener('click', lptLoadAll);
+            document.getElementById('lptCopyReportBtn').addEventListener('click', lptCopyDailyReport);
+            document.getElementById('lptHowToToken').addEventListener('click', (e) => {
+                e.preventDefault();
+                alert(
+                    'Как получить токен:\n\n' +
+                    '1. Откройте https://my.lptracker.ru и войдите в аккаунт.\n' +
+                    '2. Нажмите F12 → вкладка «Консоль».\n' +
+                    '3. Вставьте строку ниже и нажмите Enter:\n\n' +
+                    "    prompt('Токен (Ctrl+A → Ctrl+C):', document.cookie.match(/bearer_token=([^;]+)/)?.[1])\n\n" +
+                    '4. В появившемся окне выделите токен и скопируйте. Вставьте в поле «Bearer-токен».\n\n' +
+                    'Токен действует ~7 дней. После — повторите процедуру.'
+                );
+            });
+
+            // Автопроверка
+            const enabledCb = document.getElementById('lptAutocheckEnabled');
+            const thresholdInp = document.getElementById('lptAutocheckThreshold');
+            const minCallsInp = document.getElementById('lptAutocheckMinCalls');
+            thresholdInp.value = localStorage.getItem(LPT_AUTOCHECK_STORAGE.threshold) || '10';
+            minCallsInp.value = localStorage.getItem(LPT_AUTOCHECK_STORAGE.minCalls) || '5';
+            try { lptLastAlerts = JSON.parse(localStorage.getItem(LPT_AUTOCHECK_STORAGE.lastAlerts) || '{}'); } catch (e) { lptLastAlerts = {}; }
+            thresholdInp.addEventListener('change', () => localStorage.setItem(LPT_AUTOCHECK_STORAGE.threshold, thresholdInp.value));
+            minCallsInp.addEventListener('change', () => localStorage.setItem(LPT_AUTOCHECK_STORAGE.minCalls, minCallsInp.value));
+            enabledCb.addEventListener('change', () => { if (enabledCb.checked) lptStartAutoCheck(); else lptStopAutoCheck(); });
+            document.getElementById('lptCheckNowBtn').addEventListener('click', lptPoll);
+            if (localStorage.getItem(LPT_AUTOCHECK_STORAGE.enabled) === '1') {
+                enabledCb.checked = true;
+                lptStartAutoCheck();
+            }
+        }
+        
+        function getAllUniqueNames() {
+            const all = [...legalData, ...individualData, ...otherData];
+            return [...new Set(all.map(r => r._employee))].filter(n => n !== 'Не указан').sort();
+        }
+        
+        function updateSuggestions(filter = '') {
+            const names = getAllUniqueNames();
+            const filtered = filter ? names.filter(n => n.toLowerCase().includes(filter.toLowerCase())) : names;
+            suggestList.innerHTML = '';
+            if (filtered.length === 0) { suggestList.classList.add('hidden'); return; }
+            filtered.slice(0, 20).forEach(name => {
+                const li = document.createElement('li');
+                li.textContent = name;
+                li.addEventListener('click', () => { employeeSuggestInput.value = name; suggestList.classList.add('hidden'); });
+                suggestList.appendChild(li);
+            });
+            suggestList.classList.remove('hidden');
+        }
+        
+        employeeSuggestInput.addEventListener('input', (e) => updateSuggestions(e.target.value));
+        employeeSuggestInput.addEventListener('focus', () => updateSuggestions(employeeSuggestInput.value));
+        document.addEventListener('click', (e) => { if (!employeeSuggestInput.contains(e.target) && !suggestList.contains(e.target)) suggestList.classList.add('hidden'); });
+        
+        function addEmployeeToSet(name) {
+            if (!name) return;
+            const empSet = getCurrentEmployeeSet();
+            if (empSet) {
+                empSet.add(name);
+                saveAll();
+                renderEmployeeTags();
+                populateEmployeeFilter();
+                renderAll();
+            }
+        }
+        
+        addSelectedBtn.addEventListener('click', () => addEmployeeToSet(employeeSuggestInput.value.trim()));
+        addAllFromDataBtn.addEventListener('click', () => {
+            const allNames = getAllUniqueNames();
+            const empSet = getCurrentEmployeeSet();
+            const deptFilter = currentView === 'legal' ? 'legal' : 'individual';
+            let added = 0;
+            allNames.forEach(name => {
+                if (detectDepartment(name) === deptFilter) {
+                    empSet.add(name);
+                    added++;
+                }
+            });
+            saveAll();
+            renderEmployeeTags();
+            populateEmployeeFilter();
+            renderAll();
+            showToast(`Добавлено ${added} сотрудников (по отделу)`);
+        });
+        
+        function populateEmployeeFilter() {
+            const selEmps = Array.from(employeeFilter.selectedOptions).map(o=>o.value);
+            const data = getCurrentData();
+            let employees = new Set(data.map(r => r._employee));
+            if (currentView !== 'all') {
+                const empSet = getCurrentEmployeeSet();
+                empSet.forEach(e => employees.add(e));
+            }
+            const sorted = [...employees].sort();
+            employeeFilter.innerHTML = '';
+            sorted.forEach(e => {
+                const opt = new Option(e, e);
+                if (selEmps.includes(e)) opt.selected = true;
+                employeeFilter.add(opt);
+            });
+        }
+        
+        function renderEmployeeTags() {
+            if (currentView === 'all') return;
+            const empSet = getCurrentEmployeeSet();
+            const emps = [...empSet].sort();
+            employeeTagsContainer.innerHTML = emps.map(e => `
+                <span class="employee-tag">
+                    <span class="emp-name">${e}</span>
+                    <button class="edit-emp-btn" data-emp="${e}" title="Редактировать">✎</button>
+                    <button class="remove-emp-btn" data-emp="${e}" title="Удалить">✕</button>
+                </span>
+            `).join('');
+            currentCategoryLabel.textContent = currentView === 'legal' ? 'Юр.лица' : 'Физ.лица';
+        }
+        
+        function updatePresetSelect() {
+            presetSelect.innerHTML = '<option value="">— Загрузить пресет —</option>';
+            Object.keys(employeePresets).sort().forEach(name => presetSelect.add(new Option(name, name)));
+        }
+        
+        function renderAll() {
+            const raw = getCurrentData();
+            const filtered = applyFilters(raw);
+            updateTypeAndStatusFilters(raw);
+            updateKPIs(filtered);
+            updateCharts(filtered);
+            updateEmployeeTable(filtered);
+            renderCallsTable(filtered);
+            recordCountLabel.textContent = `Записей в разделе: ${raw.length} (отфильтровано: ${filtered.length})`;
+            populateExportSelect(raw);
+            
+            if (currentView === 'all') {
+                employeePanelCard.classList.add('hidden');
+            } else {
+                employeePanelCard.classList.remove('hidden');
+                renderEmployeeTags();
+                updatePresetSelect();
+                updateSuggestions();
+            }
+            
+            renderActiveFilters();
+        }
+        
+        function renderActiveFilters() {
+            const active = [];
+            
+            const getSelected = (selectEl, category, labelMap) => {
+                Array.from(selectEl.selectedOptions).forEach(opt => {
+                    if (opt.value === 'all') return; // Пропускаем "Все даты" для чипсов
+                    active.push({ id: selectEl.id, value: opt.value, category: category, label: labelMap ? labelMap[opt.value] : opt.text });
+                });
+            };
+
+            getSelected(employeeFilter, 'Сотрудник');
+            getSelected(typeFilter, 'Тип');
+            getSelected(statusFilter, 'Статус');
+            getSelected(dateFilter, 'Дата');
+            
+            const durMap = { 'zero': '0 сек', 'less30': '< 30 сек', 'ge30': '≥ 30 сек' };
+            getSelected(durationFilter, 'Длительность', durMap);
+
+            if (active.length === 0) {
+                activeFiltersContainer.classList.add('hidden');
+                activeFiltersContainer.style.display = 'none';
+                activeFiltersList.innerHTML = '';
+                return;
+            }
+
+            activeFiltersContainer.classList.remove('hidden');
+            activeFiltersContainer.style.display = 'flex';
+            activeFiltersList.innerHTML = active.map(f => `
+                <span class="active-filter-tag">
+                    <b>${f.category}:</b> ${f.label}
+                    <button data-select-id="${f.id}" data-val="${f.value}" title="Удалить фильтр">✕</button>
+                </span>
+            `).join('');
+        }
+
+        function applyFilters(data) {
+            const empSel = Array.from(employeeFilter.selectedOptions).map(o=>o.value);
+            const typeSel = Array.from(typeFilter.selectedOptions).map(o=>o.value);
+            const statSel = Array.from(statusFilter.selectedOptions).map(o=>o.value);
+            const dateSel = Array.from(dateFilter.selectedOptions).map(o=>o.value);
+            const durSel = Array.from(durationFilter.selectedOptions).map(o=>o.value);
+            
+            let filtered = data;
+            
+            if(empSel.length) filtered = filtered.filter(r=>empSel.includes(r._employee));
+            if(typeSel.length) filtered = filtered.filter(r=>typeSel.includes(r['Тип звонка']));
+            if(statSel.length) filtered = filtered.filter(r=>statSel.includes(r['Статус']));
+            if(dateSel.length > 0 && !dateSel.includes('all')) filtered = filtered.filter(r=>dateSel.includes(r._date));
+            
+            // Фильтр длительности (множественный выбор)
+            if(durSel.length) {
+                filtered = filtered.filter(r => {
+                    let match = false;
+                    if(durSel.includes('zero') && r._duration === 0) match = true;
+                    if(durSel.includes('less30') && r._duration > 0 && r._duration < 30) match = true;
+                    if(durSel.includes('ge30') && r._duration >= 30) match = true;
+                    return match;
+                });
+            }
+            
+            const s = searchInput.value.toLowerCase();
+            if(s) filtered = filtered.filter(r=> Object.values(r).some(v=>String(v).toLowerCase().includes(s)));
+            return filtered;
+        }
+        
+        function updateTypeAndStatusFilters(data) {
+            const selTypes = Array.from(typeFilter.selectedOptions).map(o=>o.value);
+            const selStats = Array.from(statusFilter.selectedOptions).map(o=>o.value);
+            const selDates = Array.from(dateFilter.selectedOptions).map(o=>o.value);
+            
+            const types = [...new Set(data.map(r=>r['Тип звонка']))].filter(Boolean).sort();
+            const stats = [...new Set(data.map(r=>r['Статус']))].filter(Boolean).sort();
+            const dates = [...new Set(data.map(r=>r._date))].filter(Boolean).sort();
+            
+            typeFilter.innerHTML = ''; 
+            types.forEach(t => {
+                const opt = new Option(t, t);
+                if (selTypes.includes(t)) opt.selected = true;
+                typeFilter.add(opt);
+            });
+            
+            statusFilter.innerHTML = ''; 
+            stats.forEach(s => {
+                const opt = new Option(s, s);
+                if (selStats.includes(s)) opt.selected = true;
+                statusFilter.add(opt);
+            });
+            
+            dateFilter.innerHTML = '<option value="all">Все даты</option>';
+            dates.forEach(d => {
+                const opt = new Option(d, d);
+                if (selDates.includes(d)) opt.selected = true;
+                dateFilter.add(opt);
+            });
+            
+            // Если ничего не выбрано или выбрано "Все даты"
+            if (selDates.length === 0 || selDates.includes('all')) {
+                if (dateFilter.options.length > 0) dateFilter.options[0].selected = true;
+            }
+            
+            // Сохраняем текущее состояние для логики переключения дат
+            dateFilter.dataset.prev = JSON.stringify(Array.from(dateFilter.selectedOptions).map(o => o.value));
+        }
+        
+        function updateKPIs(data) {
+            const total = data.length;
+            const acc = data.filter(r=>(r['Статус']||'').toLowerCase().includes('принято')).length;
+            const miss = data.filter(r=>(r['Статус']||'').toLowerCase().includes('пропущено')).length;
+            const busy = data.filter(r=>(r['Статус']||'').toLowerCase().includes('занято')).length;
+            const sum = data.reduce((a,r)=>a+r._price,0);
+            const avg = total ? data.reduce((a,r)=>a+r._duration,0)/total : 0;
+            const kpis = [
+                {l:'Всего звонков', v:total, c:'#3b82f6'},
+                {l:'Принято', v:acc, c:'#10b981'},
+                {l:'Пропущено', v:miss, c:'#ef4444'},
+                {l:'Занято', v:busy, c:'#f59e0b'},
+                {l:'Сумма', v:sum.toFixed(2)+'₽', c:'#8b5cf6'},
+                {l:'Ср.длительность', v:formatDuration(avg), c:'#64748b'}
+            ];
+            kpiContainer.innerHTML = kpis.map(k=>`<div class="kpi-item" style="border-left-color:${k.c};"><div class="kpi-label">${k.l}</div><div class="kpi-value" onclick="copyValue('${k.v}')" title="Нажмите, чтобы скопировать">${k.v}</div></div>`).join('');
+        }
+        
+        function updateCharts(data) {
+            const st = {принято:0,пропущено:0,занято:0};
+            data.forEach(r=>{ 
+                const s=r['Статус']?.toLowerCase()||''; 
+                if(s.includes('принято'))st.принято++; 
+                else if(s.includes('пропущено'))st.пропущено++; 
+                else if(s.includes('занято'))st.занято++; 
+            });
+            
+            const totalStat = st.принято + st.пропущено + st.занято;
+            const pAcc = totalStat ? Math.round(st.принято/totalStat*100) : 0;
+            const pMiss = totalStat ? Math.round(st.пропущено/totalStat*100) : 0;
+            const pBusy = totalStat ? Math.round(st.занято/totalStat*100) : 0;
+
+            // Вывод процентов под графиком
+            statusLegend.innerHTML = `
+                <div style="color:#10b981;">Принято: <strong>${st.принято}</strong> <span class="perc-badge" style="color:#059669">${pAcc}%</span></div>
+                <div style="color:#ef4444;">Пропущено: <strong>${st.пропущено}</strong> <span class="perc-badge" style="color:#dc2626">${pMiss}%</span></div>
+                <div style="color:#f59e0b;">Занято: <strong>${st.занято}</strong> <span class="perc-badge" style="color:#d97706">${pBusy}%</span></div>
+            `;
+
+            if(statusChart) statusChart.destroy();
+            statusChart = new Chart(document.getElementById('statusChart'),{
+                type:'doughnut',
+                data:{
+                    labels:['Принято','Пропущено','Занято'],
+                    datasets:[{
+                        data:[st.принято,st.пропущено,st.занято],
+                        backgroundColor:['#10b981','#ef4444','#f59e0b']
+                    }]
+                },
+                options:{
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.label || '';
+                                    if (label) label += ': ';
+                                    let val = context.raw;
+                                    let dataset = context.dataset.data;
+                                    let sum = dataset.reduce((a, b) => a + b, 0);
+                                    let perc = sum > 0 ? Math.round((val * 100) / sum) : 0;
+                                    return label + val + ' (' + perc + '%)';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            
+            const empMap = {};
+            data.forEach(r=>{ 
+                const e=r._employee; 
+                if(!empMap[e]) empMap[e]={acc:0,busy:0}; 
+                const sLow=(r['Статус']||'').toLowerCase();
+                if(sLow.includes('принято'))empMap[e].acc++;
+                else if(sLow.includes('занято'))empMap[e].busy++;
+            });
+            const sorted = Object.entries(empMap).sort((a,b)=>(b[1].acc+b[1].busy)-(a[1].acc+a[1].busy)).slice(0,5);
+            if(employeeChart) employeeChart.destroy();
+            employeeChart = new Chart(document.getElementById('employeeChart'),{
+                type:'bar',
+                data:{
+                    labels:sorted.map(e=>e[0]),
+                    datasets:[
+                        {label:'Принято',data:sorted.map(e=>e[1].acc),backgroundColor:'#10b981'},
+                        {label:'Занято',data:sorted.map(e=>e[1].busy),backgroundColor:'#f59e0b'}
+                    ]
+                },
+                options:{ indexAxis:'y' }
+            });
+            
+            const hours = Array(24).fill(0);
+            data.forEach(r=>{ if(r._hour!==undefined) hours[r._hour]++; });
+            if(hourlyChart) hourlyChart.destroy();
+            hourlyChart = new Chart(document.getElementById('hourlyChart'),{
+                type:'line',
+                data:{
+                    labels:Array.from({length:24},(_,i)=>`${i}:00`),
+                    datasets:[{label:'Всего звонков',data:hours,borderColor:'#3b82f6', tension: 0.3, fill:true, backgroundColor:'rgba(59, 130, 246, 0.1)'}]
+                }
+            });
+        }
+        
+        function updateEmployeeTable(data) {
+            const map = {};
+            data.forEach(r=>{ 
+                const e=r._employee; 
+                if(!map[e]) map[e]={total:0,acc:0,miss:0,busy:0,sum:0,dur:[]}; 
+                map[e].total++; map[e].sum+=r._price; 
+                if(r._duration>0) map[e].dur.push(r._duration); 
+                const s=r['Статус']?.toLowerCase()||''; 
+                if(s.includes('принято'))map[e].acc++; 
+                else if(s.includes('пропущено'))map[e].miss++; 
+                else if(s.includes('занято'))map[e].busy++; 
+            });
+            
+            const rows = Object.entries(map).sort((a,b)=>b[1].total-a[1].total);
+            employeeStatsBody.innerHTML = rows.map(([e,d])=>{
+                const pAcc = d.total ? Math.round((d.acc/d.total)*100) : 0;
+                const pMiss = d.total ? Math.round((d.miss/d.total)*100) : 0;
+                const pBusy = d.total ? Math.round((d.busy/d.total)*100) : 0;
+                const avgDur = formatDuration(d.dur.length ? d.dur.reduce((a,b)=>a+b,0)/d.dur.length : 0);
+                return `<tr>
+                    <td style="font-weight:500;">${e}</td>
+                    <td><b>${d.total}</b></td>
+                    <td>${d.acc} <span style="color:#10b981; font-size:11px; font-weight:600">(${pAcc}%)</span></td>
+                    <td>${d.miss} <span style="color:#ef4444; font-size:11px; font-weight:600">(${pMiss}%)</span></td>
+                    <td>${d.busy} <span style="color:#f59e0b; font-size:11px; font-weight:600">(${pBusy}%)</span></td>
+                    <td>${d.sum.toFixed(2)}</td>
+                    <td>${avgDur}</td>
+                </tr>`;
+            }).join('');
+        }
+        
+        function renderCallsTable(data) {
+            callsHeader.innerHTML = '<tr>'+headers.map(h=>`<th>${h}</th>`).join('')+'</tr>';
+            callsBody.innerHTML = data.map(r=>`<tr>${headers.map(h=>{ 
+                let v=r[h]||''; 
+                if(h.includes('Длительность')) v=formatDuration(v); 
+                else if(h==='Цена') v=parseFloat(v).toFixed(2)+'₽'; 
+                else if(h==='Статус'){ 
+                    const vLow=v.toLowerCase();
+                    const cls=vLow.includes('принято')?'status-принято':vLow.includes('пропущено')?'status-пропущено':'status-занято';
+                    v=`<span class="status-badge ${cls}">${v}</span>`; 
+                } 
+                return `<td>${v}</td>`; 
+            }).join('')}</tr>`).join('');
+        }
+        
+        function populateExportSelect(data) {
+            const emps = [...new Set(data.map(r=>r._employee))].sort();
+            exportEmployeeSelect.innerHTML = '';
+            emps.forEach(e=>exportEmployeeSelect.add(new Option(e,e)));
+        }
+        
+        // --- ЭКСПОРТ (Обновленная сводка по менеджерам) ---
+        
+        function getManagerSummaryData() {
+            const selEmps = Array.from(exportEmployeeSelect.selectedOptions).map(o=>o.value);
+            const selDates = Array.from(dateFilter.selectedOptions).map(o=>o.value);
+            let data = getCurrentData();
+            
+            if(selEmps.length) data = data.filter(r=>selEmps.includes(r._employee));
+            if(selDates.length > 0 && !selDates.includes('all')) data = data.filter(r=>selDates.includes(r._date));
+            
+            const map = new Map();
+            data.forEach(r=>{ 
+                const emp = r._employee; 
+                if(!map.has(emp)) map.set(emp,{total:0, acc:0, miss:0, busy:0, sum:0, dur:[]}); 
+                const rec=map.get(emp); 
+                rec.total++;
+                rec.sum+=r._price;
+                const s = r['Статус']?.toLowerCase() || '';
+                if(s.includes('принято')) rec.acc++; 
+                else if(s.includes('пропущено')) rec.miss++; 
+                else if(s.includes('занято')) rec.busy++; 
+                if(r._duration>0) rec.dur.push(r._duration); 
+            });
+            
+            return [...map.entries()].sort((a,b)=>b[1].total - a[1].total);
+        }
+
+        function exportXlsxManagerSummary() {
+            const summaryMap = getManagerSummaryData();
+            if(summaryMap.length === 0) return showToast('Нет данных для выгрузки');
+
+            let datesArr = Array.from(dateFilter.selectedOptions).map(o=>o.value);
+            if (datesArr.includes('all') || datesArr.length === 0) datesArr = [];
+            const activeDates = datesArr.length > 0 ? datesArr.join(', ') : 'Все даты';
+
+            const rows = [
+                ['Сводка по менеджерам', `Выбранные даты: ${activeDates}`],
+                [],
+                ['Сотрудник','Всего звонков','Принято','Пропущено','Занято','% Принято','% Пропущено','% Занято','Сумма (₽)','Ср.длительность']
+            ];
+            
+            for(let [emp,v] of summaryMap){ 
+                const avg = v.dur.length ? v.dur.reduce((a,b)=>a+b,0)/v.dur.length : 0; 
+                const pAcc = v.total ? Math.round((v.acc/v.total)*100) + '%' : '0%';
+                const pMiss = v.total ? Math.round((v.miss/v.total)*100) + '%' : '0%';
+                const pBusy = v.total ? Math.round((v.busy/v.total)*100) + '%' : '0%';
+                rows.push([emp, v.total, v.acc, v.miss, v.busy, pAcc, pMiss, pBusy, v.sum.toFixed(2), formatDuration(avg)]); 
+            }
+            
+            const wb = XLSX.utils.book_new(); 
+            const ws = XLSX.utils.aoa_to_sheet(rows); 
+            XLSX.utils.book_append_sheet(wb,ws,'Сводка по менеджерам'); 
+            XLSX.writeFile(wb,`Сводка_менеджеров_${currentView}.xlsx`); 
+            showToast('XLSX сводка готова');
+        }
+        
+        function exportCsvManagerSummary() {
+            const summaryMap = getManagerSummaryData();
+            if(summaryMap.length === 0) return showToast('Нет данных для выгрузки');
+
+            let datesArr = Array.from(dateFilter.selectedOptions).map(o=>o.value);
+            if (datesArr.includes('all') || datesArr.length === 0) datesArr = [];
+            const activeDates = datesArr.length > 0 ? datesArr.join(' / ') : 'Все даты';
+
+            let csv = `Отчет по менеджерам. Даты: ${activeDates}\n`;
+            csv += 'Сотрудник,Всего звонков,Принято,Пропущено,Занято,% Принято,% Пропущено,% Занято,Сумма,Ср.длительность\n';
+            for(let [emp,v] of summaryMap){ 
+                const avg = v.dur.length ? v.dur.reduce((a,b)=>a+b,0)/v.dur.length : 0; 
+                const pAcc = v.total ? Math.round((v.acc/v.total)*100) + '%' : '0%';
+                const pMiss = v.total ? Math.round((v.miss/v.total)*100) + '%' : '0%';
+                const pBusy = v.total ? Math.round((v.busy/v.total)*100) + '%' : '0%';
+                const empEsc = `"${emp.replace(/"/g, '""')}"`;
+                csv+=`${empEsc},${v.total},${v.acc},${v.miss},${v.busy},${pAcc},${pMiss},${pBusy},${v.sum.toFixed(2)},${formatDuration(avg)}\n`; 
+            }
+            
+            const blob = new Blob(['\ufeff'+csv],{type:'text/csv'}); 
+            const a=document.createElement('a'); 
+            a.href=URL.createObjectURL(blob); 
+            a.download=`Сводка_менеджеров_${currentView}.csv`; 
+            a.click();
+        }
+        
+        function exportFullCsv() {
+            const data = getCurrentData(); if(!data.length) return;
+            const csv = Papa.unparse(data); 
+            const blob = new Blob(['\ufeff'+csv],{type:'text/csv'}); 
+            const a=document.createElement('a'); 
+            a.href=URL.createObjectURL(blob); 
+            a.download=`Полный_журнал_${currentView}.csv`; 
+            a.click();
+        }
+        
+        // --- НОВЫЙ ОТЧЕТ: Дозваниваемость (Сводка Физ + КАЖДЫЙ сотрудник на новом листе) ---
+        function exportReachabilityReport() {
+            const wb = XLSX.utils.book_new();
+            let hasData = false;
+            
+            let selDates = Array.from(dateFilter.selectedOptions).map(o=>o.value);
+            if (selDates.includes('all') || selDates.length === 0) selDates = [];
+            const activeDates = selDates.length > 0 ? selDates.join(', ') : 'Все даты';
+            
+            let currentIndData = individualData;
+            let currentLegData = legalData;
+            
+            // Если выбран фильтр по датам - применяем его к выгрузке
+            if(selDates.length > 0) {
+                currentIndData = currentIndData.filter(r => selDates.includes(r._date));
+                currentLegData = currentLegData.filter(r => selDates.includes(r._date));
+            }
+            
+            // 1. Физ.лица (Все вместе на одном листе - Сводка)
+            const indStats = new Map();
+            currentIndData.forEach(r => {
+                const emp = r._employee;
+                if(!indStats.has(emp)) indStats.set(emp, { total:0, acc:0, miss:0, busy:0 });
+                const st = indStats.get(emp);
+                st.total++;
+                const s = r['Статус']?.toLowerCase() || '';
+                if(s.includes('принято')) st.acc++;
+                else if(s.includes('пропущено')) st.miss++;
+                else if(s.includes('занято')) st.busy++;
+            });
+            
+            if (indStats.size > 0) {
+                hasData = true;
+                const indRows = [
+                    ['Отчет по дозваниваемости (Физ.лица)', `Даты: ${activeDates}`],
+                    [],
+                    ['Сотрудник (Физ.лица)', 'Всего звонков', 'Принято', 'Пропущено', 'Занято', 'Дозваниваемость (%)']
+                ];
+                [...indStats.entries()].sort((a,b)=>b[1].total - a[1].total).forEach(([emp, v]) => {
+                    const perc = v.total ? Math.round((v.acc / v.total) * 100) : 0;
+                    indRows.push([emp, v.total, v.acc, v.miss, v.busy, `${perc}%`]);
+                });
+                
+                // Детализация по датам для физ.лиц (чтобы быстро видеть ситуацию по дням)
+                indRows.push([]);
+                indRows.push(['Детализация по датам (Физ.лица общая):']);
+                indRows.push(['Дата', 'Всего звонков', 'Принято', 'Пропущено', 'Занято', 'Дозваниваемость (%)']);
+                
+                const indDateMap = new Map();
+                currentIndData.forEach(r => {
+                    const d = r._date || 'Неизвестно';
+                    if(!indDateMap.has(d)) indDateMap.set(d, { total:0, acc:0, miss:0, busy:0 });
+                    const st = indDateMap.get(d);
+                    st.total++;
+                    const s = r['Статус']?.toLowerCase() || '';
+                    if(s.includes('принято')) st.acc++;
+                    else if(s.includes('пропущено')) st.miss++;
+                    else if(s.includes('занято')) st.busy++;
+                });
+                
+                [...indDateMap.entries()].sort((a,b)=>a[0].localeCompare(b[0])).forEach(([date, v]) => {
+                    const dPerc = v.total ? Math.round((v.acc / v.total) * 100) : 0;
+                    indRows.push([date, v.total, v.acc, v.miss, v.busy, `${dPerc}%`]);
+                });
+
+                const wsInd = XLSX.utils.aoa_to_sheet(indRows);
+                XLSX.utils.book_append_sheet(wb, wsInd, 'Физ.лица (Сводка)');
+            }
+            
+            // 2. Листы для КАЖДОГО сотрудника (и Юр, и Физ.лица)
+            const allStatsByEmp = new Map();
+            [...currentIndData, ...currentLegData].forEach(r => {
+                const emp = r._employee;
+                if(!allStatsByEmp.has(emp)) allStatsByEmp.set(emp, []);
+                allStatsByEmp.get(emp).push(r);
+            });
+            
+            allStatsByEmp.forEach((calls, emp) => {
+                hasData = true;
+                let total = 0, acc = 0, miss = 0, busy = 0;
+                const dateMap = new Map();
+                
+                calls.forEach(r => {
+                    total++;
+                    const s = r['Статус']?.toLowerCase() || '';
+                    let isAcc = false, isMiss = false, isBusy = false;
+                    
+                    if (s.includes('принято')) { acc++; isAcc = true; }
+                    else if (s.includes('пропущено')) { miss++; isMiss = true; }
+                    else if (s.includes('занято')) { busy++; isBusy = true; }
+                    
+                    const d = r._date || 'Неизвестно';
+                    if(!dateMap.has(d)) dateMap.set(d, { total:0, acc:0, miss:0, busy:0 });
+                    const dst = dateMap.get(d);
+                    dst.total++;
+                    if(isAcc) dst.acc++;
+                    if(isMiss) dst.miss++;
+                    if(isBusy) dst.busy++;
+                });
+                
+                const overallPerc = total ? Math.round((acc / total) * 100) : 0;
+                
+                const empRows = [
+                    [`Аналитика по сотруднику: ${emp}`],
+                    [`Даты отчета: ${activeDates}`],
+                    ['Всего звонков', total],
+                    ['Принято', acc],
+                    ['Пропущено', miss],
+                    ['Занято', busy],
+                    ['Общая дозваниваемость', `${overallPerc}%`],
+                    [],
+                    ['Дата', 'Всего звонков', 'Принято', 'Пропущено', 'Занято', 'Дозваниваемость (%)']
+                ];
+                
+                [...dateMap.entries()].sort((a,b)=>a[0].localeCompare(b[0])).forEach(([date, v]) => {
+                    const dPerc = v.total ? Math.round((v.acc / v.total) * 100) : 0;
+                    empRows.push([date, v.total, v.acc, v.miss, v.busy, `${dPerc}%`]);
+                });
+                
+                const wsEmp = XLSX.utils.aoa_to_sheet(empRows);
+                
+                // Имя листа максимум 31 символ, убираем запрещенные символы Excel
+                let sheetName = emp.replace(/[\[\]\*\\\/\?:]/g, '').substring(0, 26).trim() || 'Менеджер';
+                
+                let counter = 1;
+                let finalSheetName = sheetName;
+                while(wb.SheetNames.includes(finalSheetName)) {
+                    finalSheetName = `${sheetName.substring(0, 23)}_${counter}`;
+                    counter++;
+                }
+                
+                XLSX.utils.book_append_sheet(wb, wsEmp, finalSheetName);
+            });
+            
+            if (!hasData) return showToast('Нет данных Физ/Юр для формирования отчета');
+            
+            XLSX.writeFile(wb, `Отчет_Дозваниваемость.xlsx`);
+            showToast('Отчет по дозваниваемости готов');
+        }
+
+        // --- ИНТЕГРАЦИЯ GEMINI API ---
+        async function fetchGeminiAI() {
+            const data = applyFilters(getCurrentData());
+            if (data.length === 0) {
+                showToast("Нет данных для анализа");
+                return;
+            }
+            
+            runAiBtn.disabled = true;
+            aiLoading.style.display = 'block';
+            aiResult.style.display = 'none';
+            
+            const total = data.length;
+            const acc = data.filter(r=>(r['Статус']||'').toLowerCase().includes('принято')).length;
+            const miss = data.filter(r=>(r['Статус']||'').toLowerCase().includes('пропущено')).length;
+            const sum = data.reduce((a,r)=>a+r._price,0);
+            const pAcc = total ? Math.round((acc/total)*100) : 0;
+            const pMiss = total ? Math.round((miss/total)*100) : 0;
+            
+            const prompt = `Вы - эксперт-аналитик колл-центра. Проанализируйте следующие данные и дайте краткие рекомендации по улучшению работы (3-4 абзаца).
+Текущая выборка (${currentView === 'all' ? 'Все звонки' : currentView === 'legal' ? 'Юр.лица' : 'Физ.лица'}):
+- Всего звонков: ${total}
+- Дозваниваемость (Принято): ${pAcc}% (${acc} шт.)
+- Пропущено: ${pMiss}% (${miss} шт.)
+- Затраты/Выручка: ${sum.toFixed(2)} руб.
+
+Напиши профессиональный, но понятный вывод. Выдели сильные и слабые стороны. Форматируй текст чисто, без Markdown-звездочек, используй обычные абзацы.`;
+
+            const delays = [1000, 2000, 4000, 8000, 16000];
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const payload = { contents: [{ parts: [{ text: prompt }] }] };
+
+            try {
+                let aiText = '';
+                for (let i = 0; i < 5; i++) {
+                    try {
+                        const response = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                        const result = await response.json();
+                        aiText = result.candidates?.[0]?.content?.parts?.[0]?.text || "Не удалось сгенерировать ответ.";
+                        break;
+                    } catch (e) {
+                        if (i === 4) throw e;
+                        await new Promise(r => setTimeout(r, delays[i]));
+                    }
+                }
+                aiResult.textContent = aiText;
+                aiResult.style.display = 'block';
+            } catch (error) {
+                aiResult.textContent = "Ошибка при обращении к ИИ: " + error.message;
+                aiResult.style.display = 'block';
+            } finally {
+                runAiBtn.disabled = false;
+                aiLoading.style.display = 'none';
+            }
+        }
+        
+        // --- Обработчики ---
+        function handleCsvUpload(file) {
+            Papa.parse(file, {header:true, skipEmptyLines:true, encoding:'UTF-8', complete:(res)=>{
+                const { legal, individual, other } = processRawData(res.data);
+                legalData = [...legalData, ...legal];
+                individualData = [...individualData, ...individual];
+                otherData = [...otherData, ...other];
+                saveAll();
+                switchView(); 
+                showToast(`Загружено: Юр. ${legal.length}, Физ. ${individual.length}, Прочие ${other.length}`);
+                csvFileInput.value = '';
+            }});
+        }
+        
+        function switchView() {
+            currentView = viewModeSelect.value;
+            populateEmployeeFilter();
+            employeeFilter.selectedIndex = -1;
+            typeFilter.selectedIndex = -1;
+            statusFilter.selectedIndex = -1;
+            dateFilter.selectedIndex = -1;
+            durationFilter.selectedIndex = -1;
+            searchInput.value = '';
+            renderAll();
+        }
+        
+        function clearCurrentData() {
+            if (currentView === 'all') {
+                if(confirm('Очистить ВСЕ данные (Юр, Физ, Прочие)?')) {
+                    legalData = []; individualData = []; otherData = []; saveAll(); switchView(); showToast('Все данные очищены');
+                }
+            } else {
+                if(confirm(`Очистить данные отдела "${currentView}"?`)) {
+                    if (currentView === 'legal') legalData = [];
+                    else if (currentView === 'individual') individualData = [];
+                    saveAll(); switchView(); showToast('Данные раздела очищены');
+                }
+            }
+        }
+        
+        function saveCurrentAsPreset() {
+            const name = presetName.value.trim();
+            if(!name) return showToast('Введите имя пресета');
+            employeePresets[name] = { legal: [...legalEmployees], individual: [...individualEmployees] };
+            saveAll(); updatePresetSelect(); presetName.value = ''; showToast(`Пресет "${name}" сохранён`);
+        }
+        
+        function loadPreset(name) {
+            const preset = employeePresets[name]; if(!preset) return;
+            legalEmployees = new Set(preset.legal); individualEmployees = new Set(preset.individual);
+            saveAll(); switchView(); showToast(`Пресет "${name}" загружен`);
+        }
+        
+        // Инициализация
+        viewModeSelect.addEventListener('change', switchView);
+        togglePanel.addEventListener('click', () => {
+            panelContent.style.display = panelContent.style.display === 'none' ? 'block' : 'none';
+            toggleIcon.textContent = panelContent.style.display === 'none' ? '▶' : '▼';
+        });
+        
+        activeFiltersList.addEventListener('click', (e) => {
+            if (e.target.tagName === 'BUTTON') {
+                const selectId = e.target.dataset.selectId;
+                const val = e.target.dataset.val;
+                const selectEl = document.getElementById(selectId);
+                if(selectEl) {
+                    Array.from(selectEl.options).forEach(opt => { if (opt.value === val) opt.selected = false; });
+                    renderAll();
+                }
+            }
+        });
+        
+        employeeTagsContainer.addEventListener('click', (e) => {
+            const target = e.target;
+            const tag = target.closest('.employee-tag'); if(!tag) return;
+            const emp = target.dataset.emp || tag.querySelector('.remove-emp-btn')?.dataset.emp;
+            if(!emp) return;
+            const empSet = getCurrentEmployeeSet();
+            if(target.classList.contains('remove-emp-btn')) {
+                if(empSet && empSet.delete(emp)) { saveAll(); renderEmployeeTags(); populateEmployeeFilter(); renderAll(); showToast(`Сотрудник удалён`); }
+            } else if(target.classList.contains('edit-emp-btn')) {
+                const newName = prompt('Введите новое имя', emp);
+                if(newName && newName.trim() && newName !== emp) { empSet.delete(emp); empSet.add(newName.trim()); saveAll(); renderEmployeeTags(); populateEmployeeFilter(); renderAll(); showToast('Имя обновлено'); }
+            }
+        });
+        addFromClipboardBtn.addEventListener('click', async () => {
+            try { const text = await navigator.clipboard.readText(); const names = text.split(/[\n,;]+/).map(s => s.trim()).filter(s => s); if(names.length === 0) return showToast('Буфер пуст'); const empSet = getCurrentEmployeeSet(); names.forEach(n => empSet.add(n)); saveAll(); renderEmployeeTags(); populateEmployeeFilter(); renderAll(); showToast(`Добавлено сотрудников: ${names.length}`); } catch { showToast('Не удалось прочитать буфер'); }
+        });
+        savePresetBtn.addEventListener('click', saveCurrentAsPreset);
+        presetSelect.addEventListener('change', () => { if(presetSelect.value) loadPreset(presetSelect.value); });
+        deletePresetBtn.addEventListener('click', () => { const name = presetSelect.value; if(!name) return; delete employeePresets[name]; saveAll(); updatePresetSelect(); showToast(`Пресет "${name}" удалён`); });
+        
+        function init() {
+            loadAll();
+            legalData = enrichData(legalData); individualData = enrichData(individualData); otherData = enrichData(otherData);
+            switchView();
+            lptInit();
+            uploadCsvBtn.addEventListener('click', ()=>csvFileInput.click());
+            csvFileInput.addEventListener('change', e=>{ if(e.target.files[0]) handleCsvUpload(e.target.files[0]); });
+            clearDataBtn.addEventListener('click', clearCurrentData);
+            resetFiltersBtn.addEventListener('click', ()=>{ 
+                employeeFilter.selectedIndex=-1; 
+                typeFilter.selectedIndex=-1; 
+                statusFilter.selectedIndex=-1; 
+                dateFilter.selectedIndex=-1;
+                durationFilter.selectedIndex=-1; 
+                searchInput.value=''; 
+                renderAll(); 
+            });
+            searchInput.addEventListener('input', renderAll);
+            employeeFilter.addEventListener('change', renderAll); 
+            typeFilter.addEventListener('change', renderAll); 
+            statusFilter.addEventListener('change', renderAll);
+            
+            // Умная логика выбора дат (Все даты vs Конкретные)
+            dateFilter.addEventListener('change', function() {
+                const prev = this.dataset.prev ? JSON.parse(this.dataset.prev) : ['all'];
+                const curr = Array.from(this.selectedOptions).map(o => o.value);
+                
+                if (curr.includes('all') && !prev.includes('all')) {
+                    // Только что выбрали "Все даты" -> снимаем остальные
+                    Array.from(this.options).forEach(o => { if (o.value !== 'all') o.selected = false; });
+                } else if (curr.includes('all') && curr.length > 1 && prev.includes('all')) {
+                    // Выбрали конкретную дату, пока было "Все даты" -> снимаем "Все даты"
+                    Array.from(this.options).forEach(o => { if (o.value === 'all') o.selected = false; });
+                }
+                
+                this.dataset.prev = JSON.stringify(Array.from(this.selectedOptions).map(o => o.value));
+                renderAll();
+            });
+            
+            durationFilter.addEventListener('change', renderAll);
+            
+            // Привязка новых функций экспорта и ИИ
+            document.getElementById('exportXlsxManagerBtn').addEventListener('click', exportXlsxManagerSummary);
+            document.getElementById('exportCsvManagerBtn').addEventListener('click', exportCsvManagerSummary);
+            document.getElementById('exportFullCsvBtn').addEventListener('click', exportFullCsv);
+            exportReachabilityBtn.addEventListener('click', exportReachabilityReport);
+            runAiBtn.addEventListener('click', fetchGeminiAI);
+        }
+        init();
+    })();
+</script>
+</body>
+</html>
